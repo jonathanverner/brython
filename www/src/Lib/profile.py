@@ -84,15 +84,37 @@
 import _profile
 import json
 from browser.local_storage import storage
+from browser import html
 
-__all__ = ["run","runctx","status","Stats","Profile"]
+__all__ = ["run","runctx","status","Stats","Profile", "CallGrind"]
 
 class Stats:
+
     @classmethod
     def current_stats(cls):
         return Stats(_profile.data,1)
 
-    def __init__(self,data,nruns=None):
+    @classmethod
+    def _relativize(cls, data, baseline):
+        ret = {}
+        for key, v in data.items():
+            if baseline[key] == 0:
+                ret[key] = float('inf')
+            else:
+                ret[key] = data[key]/float(baseline[key])
+        return ret
+
+    @classmethod
+    def _update_with_data(cls, src_data, updates):
+        for key, val in updates.items():
+            if key in src_data:
+                src_data[key] += val
+
+    @classmethod
+    def is_toplevel(cls, call_chain):
+        return call_chain.endswith(':')
+
+    def __init__(self, data, nruns=None):
         """
            If data is a string, it should be a JSON-serialized version of Stats.
 
@@ -102,6 +124,7 @@ class Stats:
         self._ordering = "standard name"
         self._reverse_order = False
         self._sk = None
+        self._top_level_call_locations=set()
 
         if isinstance(data,str):
             self.from_json(data)
@@ -125,6 +148,7 @@ class Stats:
                     cumulated,total,count,count_norec = func_data[caller]
                     fd[caller] = {'cumulated':cumulated,'total':total,'count':count,'count_norec':count_norec}
                 self.callers[func] = fd
+            self._update_top_level_call_locations(self.callers.items())
 
     def __json__(self):
         return json.dumps({
@@ -138,7 +162,7 @@ class Stats:
             'callers':self.callers
         })
 
-    def from_json(self,json_data):
+    def from_json(self, json_data):
         self._data=None
         data = json.loads(json_data)
         self.nruns = data['nruns']
@@ -149,9 +173,10 @@ class Stats:
         self.function_cumulated_totals = data['function_cumulated_totals']
         self.function_totals = data['function_totals']
         self.callers = data['callers']
+        self._update_top_level_call_locations(self.callers.values())
 
 
-    def add(self,*stats):
+    def add(self, *stats):
         """
             Add profile data from other Stats objects or from
             Stats objects serialized into JSON and saved under
@@ -172,7 +197,7 @@ class Stats:
                     st = Stats(s)
                 self._add_stat(st)
 
-    def _add_stat(self,stat):
+    def _add_stat(self, stat):
         for f in stat.function_totals.keys():
             if f not in self.function_counts.keys():
                 self.function_totals[f] = 0
@@ -192,61 +217,119 @@ class Stats:
                 sc[caller] = { k:sc[caller][k]+values[k] for k in ['cumulated','total','count','count_norec'] }
         if self._sk is not None:
             self.sort()
+        self._update_top_level_call_locations(stat.callers.values())
 
+    def _update_top_level_call_locations(self, caller_data):
+        for d in caller_data:
+            for call_chain in d.keys():
+                if Stats.is_toplevel(call_chain):
+                    self._top_level_call_locations.add(call_chain)
 
-    def called_by_data(self, standard_calee_name):
+    def method_profile_by_callchain(self, method_name):
         """
-            Returns a dict indexed by standard function names
-            (or module names in case of top-level calls).
-            For each such function `f`, the dict contains
-            data about time spent in the function argument:`standard_calee_name`
-            when called from `f`.
+            Returns a dict indexed by call chain hashes. For each call chain hash
+            h the dict contains data about time spent in the function argument:`method_name`
+            when called from the callchain h.
 
             The data available is 'cumulated', 'total', 'count', 'count_norec'
-            (see documentation of the method:`sort` for meaning of the keys)
+            (see documentation of the method:`method_profile` for meaning of the keys)
         """
-        call_data = self.callers[standard_calee_name]
+        c_data = self.callers[method_name]
         ret = {}
-        for key, data in call_data.items():
-            if ':' in key:
-                location, func_name, func_def_line = key.split(':')
-                standard_caller_name = func_name+':'+func_def_line
-            else:
-                ln, mod = key.split(',')
-                standard_caller_name = mod
-
-            if not standard_caller_name in ret:
-                ret[standard_caller_name] = {'cumulated':0,'total':0,'count':0,'count_norec':0}
-            for k, v in data.items():
-                ret[standard_caller_name][k] += v
+        for call_chain, data in c_data.items():
+            if not call_chain in ret:
+                ret[call_chain] = {'cumulated':0,'total':0,'count':0,'count_norec':0}
+            self._update_with_data(ret[call_chain], data)
         return ret
 
-    def relative_data(self, standard_name, relative_to):
-        """
-            Returns data how much time was spent in the funcition argument:`standard_name`
-            relative to the time spent in argument:`relative_to`.
 
-            The data available is 'cumulated', 'total', 'count', 'count_norec'
-            (see documentation of the method:`sort` for meaning of the keys)
+    def profiled_methods(self):
         """
+            Returns a list of all functions for which some profile data exists.
+        """
+        return self.function_totals.keys()
 
-        baseline = {
-            'total':self.function_totals[relative_to],
-            'cumulated':self.function_cumulated_totals[relative_to],
-            'counts':self.function_counts[relative_to],
-            'counts_nonrec':self.function_counts_nonrec[relative_to]
-        }
-        callers = self.called_by_data(standard_name)
-        if relative_to in callers:
-            ret = {}
-            data = callers[relative_to]
-            for key, v in data.items():
-                if baseline[key] == 0:
-                    ret[key] = float('inf')
-                else:
-                    ret[key] = data[key]/float(baseline[key])
+
+    def sub_calls(self, call_chain=None):
+        """
+            If argument:call_chain is
+
+              - None, then sub_calls returns a list of all top-level code locations
+                (i.e. outside of a function or class definition) which call a function/method
+
+              - a stack hash, then sub_calls returns a list of all functions called from
+                the call chain argument:call_chain given by this hash
+
+            A stack hash is a string of the form:
+
+                line_number,module[:method_A[->method_B[->method_C[...]]]]
+
+            and represents a callchain starting in module on line line_number
+            and continuing by calling method_A, method_B, method_C ...
+        """
+        ret = []
+        if call_chain is None:
+            for f in self.profiled_methods():
+                callers_of_f = self.callers[f]
+                for k in self._top_level_callers:
+                    if k in callers_of_f:
+                        ret.append(f)
+                        break
         else:
-            ret = {'cumulated':0,'total':0,'count':0,'count_norec':0}
+            for func in self.profiled_methods():
+                if call_chain in self.callers[func]:
+                    ret.append(func)
+        return list(set(ret))
+
+    def method_profile(self, method_name, restrict_to_callchain=None):
+        """
+            Returns profile data for the function method_name, optionally restricting
+            the data only to those calls of the method which come from the callchain
+            restrict_to_callchain. If method_name is None, returns profile data for
+            the top-level code (i.e. code not occuring in any function call). The
+            returned data is a dict containing the following keys:
+
+                total           -- total time spent in the given method (not including sub calls)
+                cumulated       -- total time spent in the given method
+                counts          -- total number of times the method was called
+                counts_nonrec   -- total number of times the method was called excluding calls by the method itself
+        """
+        if method_name is None:
+            return {
+                'total':self.duration-sum(self.function_totals),
+                'counts':sum(self.function_counts),
+                'cumulated':self.duration,
+                'counts_nonrec':sum(self.function_counts_nonrec)
+            }
+        else:
+            if restrict_to_callchain is None:
+                return {
+                    'total':self.function_totals[method_name],
+                    'cumulated':self.function_cumulated_totals[method_name],
+                    'counts':self.function_counts[method_name],
+                    'counts_nonrec':self.function_counts_nonrec[method_name]
+                }
+            else:
+                profile_by_callchain = self.method_profile_by_callchain(method_name)
+                ret = {
+                    'total':0,
+                    'cumulated':0,
+                    'counts':0,
+                    'counts_nonrec':0,
+                }
+                if restrict_to_callchain in profile_by_callchain:
+                    self._update_with_data(ret, profile_by_callchain[restrict_to_callchain])
+                return ret
+
+    def sub_calls_profile(self, call_chain):
+        """
+            Returns profile data for calls made by the call chain call_chain.
+            The data is indexed by the names of the functions that are called
+            and only includes data collected when in the given call_chain.
+        """
+        ret = {}
+        for f in self.sub_calls(call_chain):
+            ret[f] = self.method_profile(f, restrict_to_calls_from=call_chain)
         return ret
 
 
@@ -313,6 +396,86 @@ class Stats:
 
     def __repr__(self):
         return self.__str__()
+
+class MethodElement:
+
+    @property
+    def rect(self):
+        return self._top, self._left, self._width, self._height
+
+    @rect.setter
+    def set_rect(self, rect):
+        self._top, self._left, self._width, self._height = rect
+        self._element.style.top=str(self._top)+"%"
+        self._element.style.left=str(self._left)+"%"
+        self._element.style.height=str(self._height)+"%"
+        self._element.style.width=str(self._width)+"%"
+        self._element.style.position='absolute';
+
+    def __init__(self, method_name, method_profile_data, stats, parent=None):
+        self._name = method_name
+        self._profile_data = method_profile_data
+        self._element = html.DIV()
+        self._children = {}
+        self._parent = parent
+        self._free_rect = (0,0,100,100)
+        if parent is None:
+            self._stack_hash = ":"+self._name
+            self.rect = (0,0,100,100)
+        else:
+            self._stack_hash = parent._stack_hash+"->"+self._name
+        for ch, data in stats.sub_calls_profile(self._stack_hash).items():
+            child_element = CallGrind.MethodElement(ch, data, stats, parent=self)
+            self.add_child(child_element)
+
+    def add_child(self, child):
+        self._children[child._name] = child
+        self._element <= child._element
+        ch_relative_data = Stats._relativize(child._profile_data, baseline=self._profile_data)
+        fr_top, fr_left, fr_width, fr_height = self._free_rect
+        ch_top, ch_left = fr_top, fr_left
+        if fr_width > fr_height:
+            ch_height = fr_height
+            ch_width = ch_relative_data['cumulated']/ch_height
+            fr_width = fr_width-ch_width
+            fr_left += ch_width
+        else:
+            ch_width = fr_width
+            ch_height = ch_relative_data['cumulated']/ch_width
+            fr_height = fr_height-ch_height
+            fr_top += ch_height
+        child.rect = (ch_top, ch_left, ch_width, ch_height)
+        self._free_rect = (fr_top, fr_left, ch_width, ch_height)
+
+class CallGrind:
+
+    def __init__(self):
+        self._element = html.DIV()
+        self._root = None
+        self._zoomed_element = self._root
+
+    def __ge__(self, elt):
+        return elt <= self._element
+
+    def load_data(self, stats):
+        self._root = MethodElement("Top", stats.caller_data(None), stats, parent=None)
+        self._element <= self._root._element
+        self._zoomed_element = self._root
+
+    def zoom_out(self):
+        if self._zoomed_element.parent is None:
+            return
+        self._element.removeChild(self._zoomed_element._element)
+        self._element <= self._zoomed_element.parent._element
+
+    def zoom_in(self, func_name):
+        if func_name not in self._zoomed_element._children:
+            return
+        self._element.removeChild(self._zoomed_element._element)
+        self._zoomed_element=self._zoomed_element._children[func_name]
+        self._element <= self._zoomed_element._element
+
+
 
 class Profile:
     def __init__(self):

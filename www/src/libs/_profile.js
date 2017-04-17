@@ -41,10 +41,6 @@ var $module=(function($B) {
              if(_globals===undefined){
                  var gobj = current_frame[3],
              ex = ''
-             for(var attr in current_frame[3]){
-                 ex == '$locals_'+globals_id+'["'+attr+
-                 '"] = gobj["'+attr+'"]';
-             }
              parent_block_id = current_globals_id
              ex += 'var $locals_'+current_globals_id+'=gobj;'
              eval(ex)

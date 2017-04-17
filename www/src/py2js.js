@@ -2108,11 +2108,7 @@ function $DefCtx(context){
                 fmod = pnode.id.slice(0,pnode.id.indexOf('_'))
             }
             else fmod='';
-            js = ";var _parent_line_info={}; if($B.frames_stack[$B.frames_stack.length-1]){"+
-                 " _parent_line_info=$B.frames_stack[$B.frames_stack.length-1][1].$line_info;"+
-                 "} else _parent_line_info="+global_ns+".$line_info;"+
-                 ";$B.$profile.call('"+fmod+"','"+fname+"',"+
-                 node.line_num+",_parent_line_info)"+js;
+            js = ";$B.$profile.call('"+fmod+"','"+fname+"',"+node.line_num+","+global_ns+".$line_info)"+js;
         }
         enter_frame_node.enter_frame = true
         new $NodeJSCtx(enter_frame_node,js)

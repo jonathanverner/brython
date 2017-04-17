@@ -1051,6 +1051,12 @@ $B.$profile = (function(profile) {
 
     var _fhash = function(module,fname,line){return module+"."+fname+":"+line;}
     var _hash = function(module,line){return module+":"+line;}
+    var _stack_hash = function(stack,top_level){
+        var ret = top_level+":";
+        for(var i=0;i<stack.length;i++){
+            ret +="->"+stack[i][1].$line_info;
+        }
+    }
     var _is_recursive = function(h) {
         for(i=0;i<call_stack.length;i++)
             if (call_stack[i] == h) return true;
@@ -1058,19 +1064,19 @@ $B.$profile = (function(profile) {
     }
 
     var $profile = {
-        'call':function(module,fname,line,caller){
+        'call':function(module,fname,line,global_ns_lineinfo){
             if ($B.profile > 1 && active) {
                 var ctime = new Date();
                 var h = _fhash(module,fname,line)
+                var call_sequence = _stack_hash($B.frames_stack, global_ns_lineinfo);
                 if (!(h in call_times)) {call_times[h]=[];}
                 if (call_stack.length > 0) {
                     in_func = call_stack[call_stack.length-1];
                     func_stack = call_times[in_func]
                     inner_most_call = func_stack[func_stack.length-1];
                     inner_most_call[_CUMULATED] += (ctime-inner_most_call[_LAST_RESUMED])
-                    caller = caller+":"+in_func;
                 }
-                call_times[h].push([ctime,caller,0,ctime]) // start time, caller hash, duration without subcalls, start_of_last_subcall
+                call_times[h].push([ctime,call_sequence,0,ctime]) // start time, call-stack, duration without subcalls, start_of_last_subcall
                 call_stack.push(h)
             }
         },
