@@ -1075,6 +1075,7 @@ $B.$profile = (function(profile) {
                     func_stack = call_times[in_func]
                     inner_most_call = func_stack[func_stack.length-1];
                     inner_most_call[_CUMULATED] += (ctime-inner_most_call[_LAST_RESUMED])
+                    caller = caller+":"+in_func;
                 }
                 call_times[h].push([ctime,call_sequence,0,ctime]) // start time, call-stack, duration without subcalls, start_of_last_subcall
                 call_stack.push(h)
