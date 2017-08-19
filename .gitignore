@@ -81,3 +81,6 @@ nosetests.xml
 # Files created by make_dist
 npm/*.js
 setup/data/*.js
+
+node_modules
+package-lock.json
