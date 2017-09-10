@@ -44,8 +44,14 @@ $ComplexDict.__hash__ = function(self){
     if (self === undefined) {
        return $ComplexDict.__hashvalue__ || $B.$py_next_hash--
     }
-
-    return self.$imag*1000003+self.$real
+    
+    var hash_value = _b_.float.$dict.__hash__(self.$real) + 1000003 /* sys.hash_info.imag */ * _b_.float.$dict.__hash__(self.$imag)
+    
+    // do a signed reduction modulo 2**sys.hash_info.width
+    M = 2147483648 // 2**(sys.hash_info.width-1)
+    hash_value = (hash_value & (M - 1)) - (hash_value & M)
+    if (hash_value == -1) hash_value = -2
+    return hash_value
 }
 
 $ComplexDict.__init__ = function(self,$real,$imag){
@@ -84,9 +90,17 @@ $ComplexDict.__ne__ = function(self,other){return !$ComplexDict.__eq__(self,othe
 
 $ComplexDict.__neg__ = function(self){return complex(-self.$real,-self.$imag)}
 
-$ComplexDict.__new__ = function(cls){
+$ComplexDict.__new__ = function(cls, x){
     if(cls===undefined) throw _b_.TypeError('complex.__new__(): not enough arguments')
-    return {__class__:cls.$dict}
+    c = complex(x);
+    return {
+        __class__:cls.$dict,
+        $real:c.$real,
+        $imag:c.$imag,
+    }
+}
+$ComplexDict.__getnewargs__ = function(self){
+    return _b_.tuple([self.$real, self.$imag]);
 }
 
 $ComplexDict.__pos__ = function(self){return self}

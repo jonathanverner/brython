@@ -243,19 +243,15 @@ $FloatDict.__hash__ = function(self) {
        return $FloatDict.__hashvalue__ || $B.$py_next_hash--  // for hash of float type (not instance of int)
     }
 
+    // Implementation taken from https://docs.python.org/3/library/stdtypes.html
     var _v= self.valueOf()
     if (_v === Infinity) return 314159
-    if (_v === -Infinity) return -271828
+    if (_v === -Infinity) return -314159
     if (isNaN(_v)) return 0
-    // for integers, return the value
-    if (_v==Math.round(_v)) return Math.round(_v)
-
-    var r=_b_.$frexp(_v)
-    r[0] *= Math.pow(2,31)
-    var hipart = _b_.int(r[0])
-    r[0] = (r[0] - hipart) * Math.pow(2,31)
-    var x = hipart + _b_.int(r[0]) + (r[1] << 15)
-    return x & 0xFFFFFFFF
+        
+    // return hash_fraction(*x.as_integer_ratio())
+    var frac = $FloatDict.as_integer_ratio(self)
+    return _b_.__hash_fraction__(frac[0], frac[1])
 }
 
 _b_.$isninf=function(x) {

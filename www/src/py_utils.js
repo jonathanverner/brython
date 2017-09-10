@@ -1342,6 +1342,33 @@ $B.compiled_imports = function(){
     }
 }
 
+_b_.__hash_fraction__ = function(m, n) {
+    // Implementation taken from https://docs.python.org/3/library/stdtypes.html
+
+    // Compute the hash of a rational number m / n.
+    //
+    // Assumes m and n are integers, with n positive.
+    // Equivalent to hash(fractions.Fraction(m, n)).
+    
+    P = 2147483647 // sys.hash_info.modulus
+    
+    // Remove common factors of P.  (Unnecessary if m and n already coprime.)
+    while (m % P == 0 && n % P == 0) {
+        m = (m - m % P) / P; // m = m // P
+        n = (n - n % P) / P  // n = n // P
+    }
+    if (n % P == 0) {
+        hash_value = 314159 // sys.hash_info.inf
+    } else {
+        // Fermat's Little Theorem: pow(n, P-1, P) is 1, so
+        // pow(n, P-2, P) gives the inverse of n modulo P.
+        hash_value = (Math.abs(m) % P) * (Math.pow(n, P - 2)%P) % P
+    }
+    if (m < 0) hash_value = -hash_value
+    if (hash_value == -1) hash_value = -2
+    return hash_value
+}
+
 })(__BRYTHON__)
 
 // IE doesn't implement indexOf on Arrays
