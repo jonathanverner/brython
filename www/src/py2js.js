@@ -2906,15 +2906,15 @@ function $ForExpr(context){
         var new_node = new $Node()
         new_node.line_num = $get_node(this).line_num
         var it_js = iterable.to_js()
-        var iter_name = '$iter'+num
-        var js = 'var ' + iter_name + ' = $B.$iter(' + it_js + ');' +
-                 '$locals["$next' + num + '"]' + ' = $B.$getattr('+iter_name+',"__next__")'
+            iterable_name = '$iter'+num
+            js = 'var ' + iterable_name + ' = ' + it_js + ';' +
+                 '$locals["$next' + num + '"]' + ' = $B.$getattr($B.$iter('+iterable_name+'),"__next__")'
         new $NodeJSCtx(new_node,js)
         new_nodes[pos++] = new_node
 
         // Line to store the length of the iterator
-        var js = 'if(isinstance(' + iter_name + ', dict)){$locals.$len_func' +
-            num + ' = $B.$getattr(' + iter_name + ', "__len__"); $locals.$len' +
+        var js = 'if(isinstance(' + iterable_name + ', dict)){$locals.$len_func' +
+            num + ' = $B.$getattr(' + iterable_name + ', "__len__"); $locals.$len' +
             num + ' = $locals.$len_func' + num + '()}else{$locals.$len' +
             num + ' = null}'
         new_nodes[pos++] = $NodeJS(js)
