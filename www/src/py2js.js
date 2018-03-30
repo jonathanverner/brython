@@ -5582,11 +5582,6 @@ function $to_js(tree,sep){
     return tree.map($to_js_map).join(sep)
 }
 
-function $arbo(ctx){
-    while(ctx.parent != undefined){ctx = ctx.parent}
-    return ctx
-}
-
 function $mangle(name, context){
     // If name starts with __ and doesn't end with __, and if it is defined
     // in a class, "mangle" it, ie preprend _<classname>
@@ -5610,7 +5605,7 @@ function $mangle(name, context){
     }else{return name}
 }
 
-// Function called in function $tokenise for each token found in the
+// Function called in function $tokenize for each token found in the
 // Python source code
 
 function $transition(context, token, value){
